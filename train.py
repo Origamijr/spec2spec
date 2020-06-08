@@ -41,6 +41,7 @@ def train(generator,
     """
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("Using %s" % device)
 
     print(generator)
     print(discriminator)
@@ -73,11 +74,11 @@ def train(generator,
             # Fake
             fake_AB = torch.cat((fake_source, fake), 1)
             pred_fake = discriminator(fake_AB.detach())
-            loss_D_fake = criterion_GAN(pred_fake, False)
+            loss_D_fake = criterion_GAN(pred_fake, torch.zeros(pred_fake.shape))
             # Real
             real_AB = torch.cat((fake_source, real), 1)
             pred_real = discriminator(real_AB)
-            loss_D_real = criterion_GAN(pred_real, True)
+            loss_D_real = criterion_GAN(pred_real, torch.ones(pred_real.shape))
             # combine loss and calculate gradients
             loss_D = (loss_D_fake + loss_D_real) * 0.5
             loss_D.backward()
@@ -92,7 +93,7 @@ def train(generator,
             # Fooling discriminator
             fake_AB = torch.cat((fake_source, fake), 1)
             pred_fake = discriminator(fake_AB.detach())
-            loss_G_GAN = criterion_GAN(pred_fake, True)
+            loss_G_GAN = criterion_GAN(pred_fake, torch.ones(pred_fake.shape))
             # Reconstruction
             loss_G_L1 = criterion_pixelwise(fake, real) * lambda_pixel
             # combine loss and calculate gradients
@@ -103,12 +104,12 @@ def train(generator,
 
             # BOOKKEEPING
 
-            tracker['loss_G_GAN'] = tracker['loss_G_GAN'].append(loss_G_GAN.item())
-            tracker['loss_G_L1'] = tracker['loss_G_L1'].append(loss_G_L1.item())
-            tracker['loss_G'] = tracker['loss_G'].append(loss_G.item())
-            tracker['loss_D'] = tracker['loss_D'].append(loss_D.item())
+            tracker['loss_G_GAN'].append(loss_G_GAN.item())
+            tracker['loss_G_L1'].append(loss_G_L1.item())
+            tracker['loss_G'].append(loss_G.item())
+            tracker['loss_D'].append(loss_D.item())
 
-            logger.info("TRAIN: Batch %04d/%i, loss_G_GAN %9.4f, loss_G_L1 %9.4f, loss_G %9.4f, loss_D %9.4f"
+            logger.info("TRAIN: Batch %d/%i, loss_G_GAN %9.4f, loss_G_L1 %9.4f, loss_G %9.4f, loss_D %9.4f"
                         %(i, len(train_dataloader)-1, loss_G_GAN.item(), loss_G_L1.item(), loss_G.item(), loss_D.item()))
 
         
@@ -120,10 +121,10 @@ def train(generator,
         logger.info("TRAIN: Epoch %04d/%i, loss_G_GAN %9.4f, loss_G_L1 %9.4f, loss_G %9.4f, loss_D %9.4f"
                     %(epoch, epochs, mean_loss_G_GAN, mean_loss_G_L1, mean_loss_G, mean_loss_D))
 
-        writer.add_scalar("Train-Epoch/loss_G_GAN" % (mean_loss_G_GAN, epoch))
-        writer.add_scalar("Train-Epoch/loss_G_L1" % (mean_loss_G_L1, epoch))
-        writer.add_scalar("Train-Epoch/loss_G" % (mean_loss_G, epoch))
-        writer.add_scalar("Train-Epoch/loss_D" % (mean_loss_D, epoch))
+        writer.add_scalar("Train-Epoch/loss_G_GAN", mean_loss_G_GAN, epoch)
+        writer.add_scalar("Train-Epoch/loss_G_L1", mean_loss_G_L1, epoch)
+        writer.add_scalar("Train-Epoch/loss_G", mean_loss_G, epoch)
+        writer.add_scalar("Train-Epoch/loss_D", mean_loss_D, epoch)
 
         # Save model checkpoints
         if (epoch % 10 == 0):
@@ -132,7 +133,7 @@ def train(generator,
 
 
 if __name__ == "__main__":
-    generator = UnetGenerator(2, 1, 7)
+    generator = UnetGenerator(2, 1, 8)
     discriminator = NLayerDiscriminator(3)
 
     dataset = SpecDataset()

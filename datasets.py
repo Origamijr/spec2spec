@@ -15,7 +15,7 @@ fake_audio = data_folder + 'fake_audio/'
 real_data = data_folder + 'real/'
 fake_data = data_folder + 'fake/'
 
-time_ratio = 2
+time_ratio = 8
 
 """
 Generates preprocessed hdf5 files
@@ -36,7 +36,7 @@ def create_data_from_audio(audio_file, out_file):
     y, sr = librosa.load(audio_file)
     x = y.astype(np.float64)
     f0, timeaxis = pw.harvest(x, sr, frame_period=10)   # Extract f0
-    spec = pw.cheaptrick(x, f0, timeaxis, sr).T         # Get spectrogram (idk if this is mel)
+    spec = pw.cheaptrick(x, f0, timeaxis, sr).T        # Get spectrogram (idk if this is mel)
     f0 = np.reshape(f0, (1, spec.shape[1]))
     f0_mat = np.repeat(f0, spec.shape[0], axis=0)       # Repeat f0 accross spectrogram
 
@@ -54,8 +54,8 @@ read data from hdf5 file
 """
 def read_hdf5(file):
     with h5py.File(file, mode='a') as hdf5_file:
-        spec = hdf5_file["spec"][:,:]
-        f0 = hdf5_file["f0"][:,:]
+        spec = hdf5_file["spec"][:-1,:] # truncation becausw pyworld spectrogram has 513 mels
+        f0 = hdf5_file["f0"][:-1,:]
         return spec, f0
 
 """
@@ -126,6 +126,7 @@ class SpecDataset(Dataset):
                 features["spectrogram_real"] = torch.from_numpy(spec_frame_r).float()
                 features["spectrogram_fake"] = torch.from_numpy(spec_frame_f).float()
                 features["f0"] = torch.from_numpy(f0_frame_r).float()
+                print(features["spectrogram_real"].shape, features["spectrogram_fake"].shape, features["f0"].shape)
                 self.data.append(features)
             break
 

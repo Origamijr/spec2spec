@@ -65,7 +65,7 @@ class UnetSkipConnectionBlock(nn.Module):
         use_bias = norm_layer == nn.InstanceNorm2d # MODIFICATION not using functools here
         if input_nc is None:
             input_nc = outer_nc
-        downconv = nn.Conv2d(input_nc, inner_nc, kernel_size=((8,4) if outermost else 4),
+        downconv = nn.Conv2d(input_nc, inner_nc, kernel_size=4,
                              stride=2, padding=1, bias=use_bias)
         downrelu = nn.LeakyReLU(0.2, True)
         downnorm = norm_layer(inner_nc)
@@ -74,7 +74,7 @@ class UnetSkipConnectionBlock(nn.Module):
 
         if outermost:
             upconv = nn.ConvTranspose2d(inner_nc * 2, outer_nc,
-                                        kernel_size=(8,4), stride=2, # MODIFICATION made kernel rectangular to process 256x128 chunks
+                                        kernel_size=4, stride=2,
                                         padding=1)
             down = [downconv]
             up = [uprelu, upconv, nn.Tanh()]
@@ -104,6 +104,7 @@ class UnetSkipConnectionBlock(nn.Module):
         if self.outermost:
             return self.model(x)
         else:   # add skip connections
+            #print(x.shape, self.model(x).shape)
             return torch.cat([x, self.model(x)], 1)
 
 
