@@ -1,152 +1,140 @@
 
-from spec2spec.models import *
-from spec2spec.datasets import SpecDataset, get_dataloaders
+from models import *
+from datasets import SpecDataset, get_dataloaders
 import logging
 import time
 from tensorboardX import SummaryWriter
 import torch
-
-
-logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
-    datefmt="%m/%d/%Y %H:%M:%S",
-    level=logging.INFO,
-)
-logger = logging.getLogger(__name__)
+import os
 
 def train(generator,
           discriminator,
           train_dataloader,
-          val_dataloader,
-          epochs=100
+          val_dataloader = None,
+          epochs=100, 
+          lambda_pixel = 100
           ):
 
+    # Bookkeeping setup
     ts = time.strftime('%Y_%b_%d_%H_%M_%S', time.gmtime())
+
+    logging.basicConfig(
+        format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
+        datefmt="%m/%d/%Y %H:%M:%S",
+        level=logging.INFO,
+    )
+    logger = logging.getLogger(__name__)
+
+    writer = SummaryWriter(os.path.join("logs", ts))
 
     # Loss functions
     criterion_GAN = torch.nn.MSELoss()
     criterion_pixelwise = torch.nn.L1Loss()
 
+    """
     if torch.cuda.is_available():
         generator = generator.cuda()
         discriminator = discriminator.cuda()
         criterion_GAN = criterion_GAN.cuda()
         criterion_pixelwise = criterion_pixelwise.cuda()
+    """
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     print(generator)
     print(discriminator)
 
     # Optimizers
-    optimizer_G = torch.optim.Adam(self.netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
-    optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+    optimizer_G = torch.optim.Adam(generator.parameters(), lr=0.0002, betas=(0.5, 0.999))
+    optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=0.0002, betas=(0.5, 0.999))
 
-if __name__ == "__main__":
+    # Weight initialization and scheduling?
 
-    if opt.epoch != 0:
-        # Load pretrained models
-        generator.load_state_dict(torch.load("saved_models/%s/generator_%d.pth" % (opt.dataset_name, opt.epoch)))
-        discriminator.load_state_dict(torch.load("saved_models/%s/discriminator_%d.pth" % (opt.dataset_name, opt.epoch)))
-    else:
-        # Initialize weights
-        generator.apply(weights_init_normal)
-        discriminator.apply(weights_init_normal)
+    # Main tranining loop
+    for epoch in range(epochs):
 
-    # Optimizers
-    optimizer_G = torch.optim.Adam(generator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2))
-    optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2))
+        tracker = dict(list)
 
-    # Tensor type
-    Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
+        for i, batch in enumerate(train_dataloader):
+            real = batch["spectrogram_real"].to(device)
+            spec = batch["spectrogram_fake"].to(device)
+            f0 = batch["f0"].to(device)
+            fake_source = torch.cat((spec,f0), 1)
 
+            # Create fakes
+            fake = generator(fake_source)
 
-    # ----------
-    #  Training
-    # ----------
-
-    prev_time = time.time()
-
-    for epoch in range(opt.epoch, opt.n_epochs):
-        for i, batch in enumerate(dataloader):
-
-            # Model inputs
-            real_A = Variable(batch["B"].type(Tensor))
-            real_B = Variable(batch["A"].type(Tensor))
-
-            # Adversarial ground truths
-            valid = Variable(Tensor(np.ones((real_A.size(0), *patch))), requires_grad=False)
-            fake = Variable(Tensor(np.zeros((real_A.size(0), *patch))), requires_grad=False)
-
-            # ------------------
-            #  Train Generators
-            # ------------------
-
-            optimizer_G.zero_grad()
-
-            # GAN loss
-            fake_B = generator(real_A)
-            pred_fake = discriminator(fake_B, real_A)
-            loss_GAN = criterion_GAN(pred_fake, valid)
-            # Pixel-wise loss
-            loss_pixel = criterion_pixelwise(fake_B, real_B)
-
-            # Total loss
-            loss_G = loss_GAN + lambda_pixel * loss_pixel
-
-            loss_G.backward()
-
-            optimizer_G.step()
-
-            # ---------------------
-            #  Train Discriminator
-            # ---------------------
-
+            # Train discriminator
+            # setup
+            for param in discriminator.parameters():
+                param.requires_grad = True
             optimizer_D.zero_grad()
-
-            # Real loss
-            pred_real = discriminator(real_B, real_A)
-            loss_real = criterion_GAN(pred_real, valid)
-
-            # Fake loss
-            pred_fake = discriminator(fake_B.detach(), real_A)
-            loss_fake = criterion_GAN(pred_fake, fake)
-
-            # Total loss
-            loss_D = 0.5 * (loss_real + loss_fake)
-
+            # Fake
+            fake_AB = torch.cat((fake_source, fake), 1)
+            pred_fake = discriminator(fake_AB.detach())
+            loss_D_fake = criterion_GAN(pred_fake, False)
+            # Real
+            real_AB = torch.cat((fake_source, real), 1)
+            pred_real = discriminator(real_AB)
+            loss_D_real = criterion_GAN(pred_real, True)
+            # combine loss and calculate gradients
+            loss_D = (loss_D_fake + loss_D_real) * 0.5
             loss_D.backward()
+            # update
             optimizer_D.step()
 
-            # --------------
-            #  Log Progress
-            # --------------
+            # Train generator
+            # setup
+            for param in discriminator.parameters():
+                param.requires_grad = False
+            optimizer_G.zero_grad()
+            # Fooling discriminator
+            fake_AB = torch.cat((fake_source, fake), 1)
+            pred_fake = discriminator(fake_AB.detach())
+            loss_G_GAN = criterion_GAN(pred_fake, True)
+            # Reconstruction
+            loss_G_L1 = criterion_pixelwise(fake, real) * lambda_pixel
+            # combine loss and calculate gradients
+            loss_G = loss_G_GAN + loss_G_L1
+            loss_G.backward()
+            # update
+            optimizer_G.step()
 
-            # Determine approximate time left
-            batches_done = epoch * len(dataloader) + i
-            batches_left = opt.n_epochs * len(dataloader) - batches_done
-            time_left = datetime.timedelta(seconds=batches_left * (time.time() - prev_time))
-            prev_time = time.time()
+            # BOOKKEEPING
 
-            # Print log
-            sys.stdout.write(
-                "\r[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f, pixel: %f, adv: %f] ETA: %s"
-                % (
-                    epoch,
-                    opt.n_epochs,
-                    i,
-                    len(dataloader),
-                    loss_D.item(),
-                    loss_G.item(),
-                    loss_pixel.item(),
-                    loss_GAN.item(),
-                    time_left,
-                )
-            )
+            tracker['loss_G_GAN'] = tracker['loss_G_GAN'].append(loss_G_GAN.item())
+            tracker['loss_G_L1'] = tracker['loss_G_L1'].append(loss_G_L1.item())
+            tracker['loss_G'] = tracker['loss_G'].append(loss_G.item())
+            tracker['loss_D'] = tracker['loss_D'].append(loss_D.item())
 
-            # If at sample interval save image
-            if batches_done % opt.sample_interval == 0:
-                sample_images(batches_done)
+            logger.info("TRAIN: Batch %04d/%i, loss_G_GAN %9.4f, loss_G_L1 %9.4f, loss_G %9.4f, loss_D %9.4f"
+                        %(i, len(train_dataloader)-1, loss_G_GAN.item(), loss_G_L1.item(), loss_G.item(), loss_D.item()))
 
-        if opt.checkpoint_interval != -1 and epoch % opt.checkpoint_interval == 0:
-            # Save model checkpoints
-            torch.save(generator.state_dict(), "saved_models/%s/generator_%d.pth" % (opt.dataset_name, epoch))
-            torch.save(discriminator.state_dict(), "saved_models/%s/discriminator_%d.pth" % (opt.dataset_name, epoch))
+        
+        mean_loss_G_GAN = sum(tracker['loss_G_GAN']) / len(tracker['loss_G_GAN'])
+        mean_loss_G_L1 = sum(tracker['loss_G_L1']) / len(tracker['loss_G_L1'])
+        mean_loss_G = sum(tracker['loss_G']) / len(tracker['loss_G'])
+        mean_loss_D = sum(tracker['loss_D']) / len(tracker['loss_D'])
+
+        logger.info("TRAIN: Epoch %04d/%i, loss_G_GAN %9.4f, loss_G_L1 %9.4f, loss_G %9.4f, loss_D %9.4f"
+                    %(epoch, epochs, mean_loss_G_GAN, mean_loss_G_L1, mean_loss_G, mean_loss_D))
+
+        writer.add_scalar("Train-Epoch/loss_G_GAN" % (mean_loss_G_GAN, epoch))
+        writer.add_scalar("Train-Epoch/loss_G_L1" % (mean_loss_G_L1, epoch))
+        writer.add_scalar("Train-Epoch/loss_G" % (mean_loss_G, epoch))
+        writer.add_scalar("Train-Epoch/loss_D" % (mean_loss_D, epoch))
+
+        # Save model checkpoints
+        if (epoch % 10 == 0):
+            torch.save(generator.state_dict(), "saved_models/%s/generator_%d.pth" % (ts, epoch))
+            torch.save(discriminator.state_dict(), "saved_models/%s/discriminator_%d.pth" % (ts, epoch))
+
+
+if __name__ == "__main__":
+    generator = UnetGenerator(2, 1, 7)
+    discriminator = NLayerDiscriminator(3)
+
+    dataset = SpecDataset()
+    train_dl, _ = get_dataloaders(dataset)
+
+    train(generator, discriminator, train_dl)

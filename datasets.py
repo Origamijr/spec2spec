@@ -57,13 +57,13 @@ def generate_frames(data):
     time_frame = data.shape[0] * time_ratio
     overlap = time_frame // 2
     num_frames = int(np.ceil(input_size / overlap)) - 1
-    padded = np.zeros((data.shape[0], overlap * (num_frames + 1)))
-    padded[:,:data.shape[1]] = data
+    padded = np.zeros((1, data.shape[0], overlap * (num_frames + 1)))
+    padded[0,:,:data.shape[1]] = data
     frames = []
     i = 0
     start = 0
     while i < num_frames:
-        frames.append(padded[:,start:start+time_frame])
+        frames.append(padded[:,:,start:start+time_frame])
         i += 1
         start += overlap
     return frames
