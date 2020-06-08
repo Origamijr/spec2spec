@@ -32,13 +32,13 @@ def train(generator,
     criterion_GAN = torch.nn.MSELoss()
     criterion_pixelwise = torch.nn.L1Loss()
 
-    """
+    
     if torch.cuda.is_available():
         generator = generator.cuda()
         discriminator = discriminator.cuda()
         criterion_GAN = criterion_GAN.cuda()
         criterion_pixelwise = criterion_pixelwise.cuda()
-    """
+    
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Using %s" % device)
@@ -51,6 +51,47 @@ def train(generator,
     optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=0.0002, betas=(0.5, 0.999))
 
     # Weight initialization and scheduling?
+
+    def train_discriminator(fake, fake_source, real):
+
+        # setup
+        for param in discriminator.parameters():
+            param.requires_grad = True
+        optimizer_D.zero_grad()
+        # Fake
+        fake_AB = torch.cat((fake_source, fake), 1)
+        pred_fake = discriminator(fake_AB.detach())
+        loss_D_fake = criterion_GAN(pred_fake, torch.zeros(pred_fake.shape))
+        # Real
+        real_AB = torch.cat((fake_source, real), 1)
+        pred_real = discriminator(real_AB)
+        loss_D_real = criterion_GAN(pred_real, torch.ones(pred_real.shape))
+        # combine loss and calculate gradients
+        loss_D = (loss_D_fake + loss_D_real) * 0.5
+        loss_D.backward()
+        # update
+        optimizer_D.step()
+
+        return float(loss_D.item())
+
+    def train_generator(fake, fake_source, real):
+        # setup
+        for param in discriminator.parameters():
+            param.requires_grad = False
+        optimizer_G.zero_grad()
+        # Fooling discriminator
+        fake_AB = torch.cat((fake_source, fake), 1)
+        pred_fake = discriminator(fake_AB.detach())
+        loss_G_GAN = criterion_GAN(pred_fake, torch.ones(pred_fake.shape))
+        # Reconstruction
+        loss_G_L1 = criterion_pixelwise(fake, real) * lambda_pixel
+        # combine loss and calculate gradients
+        loss_G = loss_G_GAN + loss_G_L1
+        loss_G.backward()
+        # update
+        optimizer_G.step()
+        
+        return float(loss_G_GAN.item()), float(loss_G_L1.item()), float(loss_G.item())
 
     # Main tranining loop
     for epoch in range(epochs):
@@ -66,51 +107,23 @@ def train(generator,
             # Create fakes
             fake = generator(fake_source)
 
-            # Train discriminator
-            # setup
-            for param in discriminator.parameters():
-                param.requires_grad = True
-            optimizer_D.zero_grad()
-            # Fake
-            fake_AB = torch.cat((fake_source, fake), 1)
-            pred_fake = discriminator(fake_AB.detach())
-            loss_D_fake = criterion_GAN(pred_fake, torch.zeros(pred_fake.shape))
-            # Real
-            real_AB = torch.cat((fake_source, real), 1)
-            pred_real = discriminator(real_AB)
-            loss_D_real = criterion_GAN(pred_real, torch.ones(pred_real.shape))
-            # combine loss and calculate gradients
-            loss_D = (loss_D_fake + loss_D_real) * 0.5
-            loss_D.backward()
-            # update
-            optimizer_D.step()
+            # Train Discriminator
+            loss_D = train_discriminator(fake, fake_source, real)
+
+            tracker['loss_D'].append(loss_D)
 
             # Train generator
-            # setup
-            for param in discriminator.parameters():
-                param.requires_grad = False
-            optimizer_G.zero_grad()
-            # Fooling discriminator
-            fake_AB = torch.cat((fake_source, fake), 1)
-            pred_fake = discriminator(fake_AB.detach())
-            loss_G_GAN = criterion_GAN(pred_fake, torch.ones(pred_fake.shape))
-            # Reconstruction
-            loss_G_L1 = criterion_pixelwise(fake, real) * lambda_pixel
-            # combine loss and calculate gradients
-            loss_G = loss_G_GAN + loss_G_L1
-            loss_G.backward()
-            # update
-            optimizer_G.step()
+            loss_G_GAN, loss_G_L1, loss_G = train_generator(fake, fake_source, real)
+            
 
             # BOOKKEEPING
 
-            tracker['loss_G_GAN'].append(loss_G_GAN.item())
-            tracker['loss_G_L1'].append(loss_G_L1.item())
-            tracker['loss_G'].append(loss_G.item())
-            tracker['loss_D'].append(loss_D.item())
+            tracker['loss_G_GAN'].append(loss_G_GAN)
+            tracker['loss_G_L1'].append(loss_G_L1)
+            tracker['loss_G'].append(loss_G)
 
             logger.info("TRAIN: Batch %d/%i, loss_G_GAN %9.4f, loss_G_L1 %9.4f, loss_G %9.4f, loss_D %9.4f"
-                        %(i, len(train_dataloader)-1, loss_G_GAN.item(), loss_G_L1.item(), loss_G.item(), loss_D.item()))
+                        %(i, len(train_dataloader)-1, loss_G_GAN, loss_G_L1, loss_G, loss_D))
 
         
         mean_loss_G_GAN = sum(tracker['loss_G_GAN']) / len(tracker['loss_G_GAN'])
@@ -128,8 +141,8 @@ def train(generator,
 
         # Save model checkpoints
         if (epoch % 10 == 0):
-            torch.save(generator.state_dict(), "saved_models/%s/generator_%d.pth" % (ts, epoch))
-            torch.save(discriminator.state_dict(), "saved_models/%s/discriminator_%d.pth" % (ts, epoch))
+            torch.save(generator.state_dict(), "saved_models/generator_%s_%d.pth" % (ts, epoch))
+            torch.save(discriminator.state_dict(), "saved_models/discriminator_%s_%d.pth" % (ts, epoch))
 
 
 if __name__ == "__main__":

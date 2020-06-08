@@ -126,7 +126,7 @@ class SpecDataset(Dataset):
                 features["spectrogram_real"] = torch.from_numpy(spec_frame_r).float()
                 features["spectrogram_fake"] = torch.from_numpy(spec_frame_f).float()
                 features["f0"] = torch.from_numpy(f0_frame_r).float()
-                print(features["spectrogram_real"].shape, features["spectrogram_fake"].shape, features["f0"].shape)
+                #print(features["spectrogram_real"].shape, features["spectrogram_fake"].shape, features["f0"].shape)
                 self.data.append(features)
             break
 
@@ -142,7 +142,7 @@ Get split data loaders
 def get_dataloaders(dataset,
                     spec_transform=None, 
                     f0_transform=None, 
-                    batch_size=5, 
+                    batch_size=1, 
                     shuffle=True,
                     split=1,
                     num_workers=0):
