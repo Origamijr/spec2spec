@@ -2,18 +2,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-class Spec_pix2pix(nn.Module):
-
-    def __init__(self, n_class):
-        super(Spec_pix2pix, self).__init__()
-        self.generator = UnetGenerator(2, 1, 7)
-        self.discriminator = NLayerDiscriminator(3)
-
-    def forward(self, x):
-
-        return 0
-
-
 """
 The following modules are taken from the pytorch implementation of pix2pix
 https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix

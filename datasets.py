@@ -50,6 +50,15 @@ def create_data_from_audio(audio_file, out_file):
     print('wrote %s' % out_file)
 
 """
+read data from hdf5 file
+"""
+def read_hdf5(file):
+    with h5py.File(file, mode='a') as hdf5_file:
+        spec = hdf5_file["spec"][:,:]
+        f0 = hdf5_file["f0"][:,:]
+        return spec, f0
+
+"""
 Creates overlapping fixed sized frames of the data
 """
 def generate_frames(data):
@@ -90,18 +99,22 @@ class SpecDataset(Dataset):
         fake_data = data_folder + 'fake/'
 
         # Pair data (hopefully the names of the files are correlated)
-        for real_file, fake_file in zip(os.listdir(real_data).sort(), os.listdir(fake_data).sort()):
+        real_files = os.listdir(real_data)
+        fake_files = os.listdir(fake_data)
+        real_files.sort()
+        fake_files.sort()
+        for real_file, fake_file in zip(real_files, fake_files):
             print('paired %s and %s' % (real_file, fake_file))
 
             # Real data (target)
-            spec_r, f0_r = __read_hdf5(real_data + real_file)
+            spec_r, f0_r = read_hdf5(real_data + real_file)
             if spec_transform is not None: spec_r = spec_transform(spec_r)
             if f0_transform is not None: f0_r = f0_transform(f0_r)
             spec_frames_r = generate_frames(spec_r)
             f0_frames_r = generate_frames(f0_r)
 
             # Fake data (source)
-            spec_f, f0_f = __read_hdf5(fake_data + fake_file)
+            spec_f, f0_f = read_hdf5(fake_data + fake_file)
             if spec_transform is not None: spec_f = spec_transform(spec_f)
             if f0_transform is not None: f0_f = f0_transform(f0_f)
             spec_frames_f = generate_frames(spec_f)
@@ -114,12 +127,7 @@ class SpecDataset(Dataset):
                 features["spectrogram_fake"] = torch.from_numpy(spec_frame_f).float()
                 features["f0"] = torch.from_numpy(f0_frame_r).float()
                 self.data.append(features)
-
-    def __read_hdf5(self, file):
-        with h5py.File(file, mode='a') as hdf5_file:
-            spec = hdf5_file["spec"][:,:]
-            f0 = hdf5_file["f0"][:,:]
-            return spec, f0
+            break
 
     def __getitem__(self, index):
         return self.data[index]
@@ -147,12 +155,15 @@ def get_dataloaders(dataset,
                         batch_size=batch_size, 
                         shuffle=shuffle, 
                         num_workers=num_workers)
-    val_dl = DataLoader(val, 
-                        batch_size=batch_size, 
-                        shuffle=shuffle, 
-                        num_workers=num_workers)
+    val_dl = None
+    if split < 1:
+        val_dl = DataLoader(val, 
+                            batch_size=batch_size, 
+                            shuffle=shuffle, 
+                            num_workers=num_workers)
 
     return trn_dl, val_dl
 
 if __name__ == "__main__":
     #process_audio_files()
+    pass

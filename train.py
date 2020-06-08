@@ -6,6 +6,7 @@ import time
 from tensorboardX import SummaryWriter
 import torch
 import os
+from collections import defaultdict
 
 def train(generator,
           discriminator,
@@ -25,7 +26,7 @@ def train(generator,
     )
     logger = logging.getLogger(__name__)
 
-    writer = SummaryWriter(os.path.join("logs", ts))
+    writer = SummaryWriter(os.path.join("logs", repr(ts)))
 
     # Loss functions
     criterion_GAN = torch.nn.MSELoss()
@@ -53,7 +54,7 @@ def train(generator,
     # Main tranining loop
     for epoch in range(epochs):
 
-        tracker = dict(list)
+        tracker = defaultdict(list)
 
         for i, batch in enumerate(train_dataloader):
             real = batch["spectrogram_real"].to(device)
