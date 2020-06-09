@@ -81,11 +81,15 @@ def overlapadd_frames(frames):
     #TODO
     pass
 
-def log_scale(data):
-    return np.log(data + 1e-10)
-
-def real_scale(data):
-    return np.exp(data) - 1e-10
+def log_scale(shift, scale):
+    def helper(data):
+        if np.min(data) < 0: data = np.maximum(data, np.zeros(data.shape))
+        result = (np.log(data + 1e-6) + shift) * scale
+        if np.max(result) > 1: print('too big')
+        if np.min(result) < -1: print('too small')
+        return result
+    return helper
+    
 
 """
 Iterable dataset for training
@@ -108,6 +112,7 @@ class SpecDataset(Dataset):
 
             # Real data (target)
             spec_r, f0_r = read_hdf5(real_data + real_file)
+            if np.isnan(np.sum(spec_r)) or np.isnan(np.sum(f0_r)): continue
             if spec_transform is not None: spec_r = spec_transform(spec_r)
             if f0_transform is not None: f0_r = f0_transform(f0_r)
             spec_frames_r = generate_frames(spec_r)
@@ -115,10 +120,12 @@ class SpecDataset(Dataset):
 
             # Fake data (source)
             spec_f, f0_f = read_hdf5(fake_data + fake_file)
+            if np.isnan(np.sum(spec_f)) or np.isnan(np.sum(f0_f)): continue
             if spec_transform is not None: spec_f = spec_transform(spec_f)
             if f0_transform is not None: f0_f = f0_transform(f0_f)
             spec_frames_f = generate_frames(spec_f)
             f0_frames_f = generate_frames(f0_f)
+
 
             # Iterate over fixed sized frames
             for spec_frame_r, f0_frame_r, spec_frame_f, f0_frame_f in zip(spec_frames_r, f0_frames_r, spec_frames_f, f0_frames_f):
@@ -126,9 +133,8 @@ class SpecDataset(Dataset):
                 features["spectrogram_real"] = torch.from_numpy(spec_frame_r).float()
                 features["spectrogram_fake"] = torch.from_numpy(spec_frame_f).float()
                 features["f0"] = torch.from_numpy(f0_frame_r).float()
-                print(features["spectrogram_real"].shape, features["spectrogram_fake"].shape, features["f0"].shape)
+                #print(features["spectrogram_real"].shape, features["spectrogram_fake"].shape, features["f0"].shape)
                 self.data.append(features)
-            break
 
     def __getitem__(self, index):
         return self.data[index]
@@ -142,7 +148,7 @@ Get split data loaders
 def get_dataloaders(dataset,
                     spec_transform=None, 
                     f0_transform=None, 
-                    batch_size=5, 
+                    batch_size=1, 
                     shuffle=True,
                     split=1,
                     num_workers=0):
