@@ -81,12 +81,15 @@ def overlapadd_frames(frames):
     #TODO
     pass
 
-def log_scale(shift, scale):
+def log_scale(shift, scale, inverse=False):
     def helper(data):
-        if np.min(data) < 0: data = np.maximum(data, np.zeros(data.shape))
-        result = (np.log(data + 1e-6) + shift) * scale
-        if np.max(result) > 1: print('too big')
-        if np.min(result) < -1: print('too small')
+        if not inverse:
+            if np.min(data) < 0: data = np.maximum(data, np.zeros(data.shape))
+            result = (np.log(data + 1e-6) + shift) * scale
+            if np.max(result) > 1: print('too big')
+            if np.min(result) < -1: print('too small')
+        else:
+            result = np.exp(data / scale - shift) - 1e-6
         return result
     return helper
     
