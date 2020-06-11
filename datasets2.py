@@ -12,19 +12,34 @@ data_folder = 'data/'
 data_file = 'initial_aa_dataset.hdf5'
 data_path = data_folder+data_file
 
+time_ratio = 8
 
+def generate_frames(data):
+    input_size = data.shape[1]
+    time_frame = data.shape[0] * time_ratio
+    overlap = time_frame // 2
+    num_frames = int(np.ceil(input_size / overlap)) - 1
+    padded = np.zeros((1, data.shape[0], overlap * (num_frames + 1)))
+    padded[0,:,:data.shape[1]] = data
+    frames = []
+    i = 0
+    start = 0
+    while i < num_frames:
+        frames.append(padded[:,:,start:start+time_frame])
+        i += 1
+        start += overlap
+    return frames
 
-def scale_shift(shift, scale, inverse=False):
+def shift_scale(shift, scale, inverse=False):
     def helper(data):
-    	if not inverse:
-        	result = (data + shift) * scale
-        	if np.max(result) > 1: print('too big')
-        	if np.min(result) < -1: print('too small')
+        if not inverse:
+            result = (data + shift) * scale
+            #if np.max(result) > 1: print('too big')
+            #if np.min(result) < -1: print('too small')
         else:
-        	result = (data/scale) - shift
+            result = (data / scale) - shift
         return result
     return helper
-
 
 class SpecDataset(Dataset):
     def __init__(self, data_path=data_path,  spec_transform=None, f0_transform=None):
@@ -33,22 +48,28 @@ class SpecDataset(Dataset):
 
         hdf5_file = h5py.File(data_path, 'r')
         for styles in hdf5_file:
-    		for datapoints in hdf5_files[styles]:
-        		f0 = np.transpose(hdf5_files[hdf5_files[styles][datapoints].name+'/f0'])
-        		mfsc_synth = np.transpose(hdf5_files[hdf5_files[styles][datapoints].name+'/log_mfsc_synth'])
-        		mfsc_real = np.transpose(hdf5_files[hdf5_files[styles][datapoints].name+'/log_mfsc_real'])
-        		f0 = np.repeat(f0, spec_synth.shape[0], axis=0)
-
-            	if f0_transform is not None: f0 = f0_transform(f0)
-            	if spec_transform is not None: mfsc_synth = spec_transform(mfsc_synth)
-            	if spec_transform is not None: mfsc_real = spec_transform(mfsc_real)
-            	
-            	features = dict()
-                features["mfsc_real"] = torch.from_numpy(mfsc_real).float()
-                features["mfsc_synth"] = torch.from_numpy(mfsc_synth).float()
-                features["f0"] = torch.from_numpy(f0).float()
-            	
-            	self.data.append(features)
+            for datapoints in hdf5_file[styles]:
+                mfsc_real = np.transpose(hdf5_file[hdf5_file[styles][datapoints].name+'/log_mfsc_real'])
+                mfsc_synth = np.transpose(hdf5_file[hdf5_file[styles][datapoints].name+'/log_mfsc_synth'])
+                f0 = np.transpose(hdf5_file[hdf5_file[styles][datapoints].name+'/f0'])
+                f0 = np.repeat(f0, mfsc_synth.shape[0], axis=0)
+                
+                if spec_transform is not None: mfsc_real = spec_transform(mfsc_real)
+                if spec_transform is not None: mfsc_synth = spec_transform(mfsc_synth)
+                if f0_transform is not None: f0 = f0_transform(f0)
+                    
+                mfsc_frames_r = generate_frames(mfsc_real)
+                mfsc_frames_s = generate_frames(mfsc_synth)
+                f0_frames = generate_frames(f0)
+               
+                                          
+                for mfsc_frame_r, mfsc_frame_s, f0_frame in zip(mfsc_frames_r, mfsc_frames_s, f0_frames):
+                    features = dict()
+                    features["mfsc_real"] = torch.from_numpy(mfsc_frame_r).float()
+                    features["mfsc_synth"] = torch.from_numpy(mfsc_frame_s).float()
+                    features["f0"] = torch.from_numpy(f0_frame).float()
+                
+                    self.data.append(features)
 
     def __getitem__(self, index):
         return self.data[index]
