@@ -16,7 +16,7 @@ def train(generator,
           epochs=100, 
           lambda_pixel = 100,
           wgan=True,
-          d_iterations=1,
+          d_iterations=5,
           lambda_gp=0.1
           ):
 
@@ -265,7 +265,7 @@ if __name__ == "__main__":
     generator = UnetGenerator(3, 1, 7)
     discriminator = NLayerDiscriminator(3)
 
-    dataset = SpecDataset(spec_transform=shift_scale(7, 0.1), f0_transform=shift_scale(-200, 0.005))
+    dataset = SpecDataset(spec_transform=shift_scale(7, 0.1), f0_transform=shift_scale(-58, 0.08))
     train_dl, valid_dl = get_dataloaders(dataset, split=0.8)
 
-    train(generator, discriminator, train_dl, valid_dl, 41)
+    train(generator, discriminator, train_dl, valid_dl, 151)

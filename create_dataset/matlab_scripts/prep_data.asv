@@ -4,7 +4,8 @@ clc;
 
 %% Parameters 
 
-synthflag = 0; % Set 1 to synthesize and 0 to import pre-synthesized audio
+synthflag = 1; % Set 1 to synthesize and 0 to import pre-synthesized audio
+removezeroflag = 1;
 %% Load f0 contours
 
 f0_chalan = (load("../pitch_contours/initial_aa/chalan_f0.mat").x);
@@ -16,6 +17,18 @@ f0_taan = (load("../pitch_contours/initial_aa/taan_f0.mat").x);
 [chalan, fs] = audioread("../voice_data/initial_aa/all_chalans.wav");
 [laykari, fs] = audioread("../voice_data/initial_aa/all_laykaris.wav");
 [taan, fs] = audioread("../voice_data/initial_aa/all_taans.wav");
+
+%% Removing 0 sections
+
+if removezeroflag
+    f0_chalan_pitched = find(f0_chalan > 95);
+    f0_laykari_pitched = find(f0_laykari > 95);
+    f0_taan_pitched = find(f0_taan > 95);
+
+    f0_chalan = f0_chalan(f0_chalan_pitched);
+    f0_laykari = f0_laykari(f0_laykari_pitched);
+    f0_taan = f0_taan(f0_taan_pitched);
+end
 
 %% Getting synthesized audio
 
@@ -74,6 +87,11 @@ buffer_synth_chalan = make_buffers(synth_chalan, win_len, hop_len);
 buffer_synth_laykari = make_buffers(synth_laykari, win_len, hop_len);
 buffer_synth_taan = make_buffers(synth_taan, win_len, hop_len);
 
+%% Remove buffers with 0 pitch
+
+buffer_chalan = buffer_chalan(:, f0_chalan_pitched);
+buffer_laykari = buffer_laykari(:, f0_laykari_pitched);
+buffer_taan = buffer_taan(:, f0_taan_pitched);
 %% Split buffers into datapoints
 
 split_len = 1024;
@@ -109,6 +127,8 @@ fHigh = 18000;
 fRange = [fLow, fHigh];
 noMelChannels = 128;
 
+diff = [];
+diffpoints = [];
 for i=1:nodatapoints_chalan
     thisframe_real = data_chalan{i};
     thisframe_synth = data_synth_chalan{i};
@@ -125,6 +145,12 @@ for i=1:nodatapoints_chalan
     real_data_chalan{i, 1} = mfsc_thisframe_real;
     synth_data_chalan{i, 1} = mfsc_thisframe_synth;
     f0_data_chalan{i, 1} = thisf0;
+    
+    thisdiff = abs(mfsc_thisframe_real - mfsc_thisframe_synth);
+    diff = [diff; thisdiff];
+    
+    thisdiffpoint = mean(thisdiff, 'all');
+    diffpoints = [diffpoints; thisdiffpoint];
 end
 
 for i=1:nodatapoints_laykari
@@ -143,6 +169,8 @@ for i=1:nodatapoints_laykari
     real_data_laykari{i, 1} = mfsc_thisframe_real;
     synth_data_laykari{i, 1} = mfsc_thisframe_synth;
     f0_data_laykari{i, 1} = thisf0;
+    
+    diff = [diff; abs(mfsc_thisframe_real - mfsc_thisframe_synth)];
 end
 
 for i=1:nodatapoints_taan
@@ -159,14 +187,15 @@ for i=1:nodatapoints_taan
     mfsc_thisframe_synth(find(isinf(mfsc_thisframe_synth))) = -15;
     
     real_data_taan{i, 1} = mfsc_thisframe_real;
+    synth_data_taan{i, 1} = mfsc_thisframe_synth;
+    f0_data_taan{i, 1} = thisf0;
     
-    synth_data_taan{i, 1} = thisf0;
-    f0_data_taan{i, 1} = 
+    diff = [diff; abs(mfsc_thisframe_real - mfsc_thisframe_synth)];
 end
 
 %% Write data to hdf5 files
 
-filepath = "../../data/initial_aa_dataset.hdf5";
+filepath = "../../data/initial_aa_dataset_pitchthresholded.hdf5";
 
 for i = 1:nodatapoints_chalan
     thisf0 = f0_data_chalan{i};

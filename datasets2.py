@@ -9,7 +9,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader, random_split
 
 data_folder = 'data/'
-data_file = 'initial_aa_dataset.hdf5'
+data_file = 'initial_aa_dataset_pitchthresholded.hdf5'
 data_path = data_folder+data_file
 
 time_ratio = 8
@@ -52,6 +52,8 @@ class SpecDataset(Dataset):
                 mfsc_real = np.transpose(hdf5_file[hdf5_file[styles][datapoints].name+'/log_mfsc_real'])
                 mfsc_synth = np.transpose(hdf5_file[hdf5_file[styles][datapoints].name+'/log_mfsc_synth'])
                 f0 = np.transpose(hdf5_file[hdf5_file[styles][datapoints].name+'/f0'])
+                #f0[np.nonzero(f0)] = 69+12*np.log2(f0[np.nonzero(f0)]/440)
+                f0 = 69+12*np.log2(f0/440)
                 f0 = np.repeat(f0, mfsc_synth.shape[0], axis=0)
                 
                 if spec_transform is not None: mfsc_real = spec_transform(mfsc_real)
