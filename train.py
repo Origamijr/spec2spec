@@ -1,6 +1,6 @@
 
 from models import *
-from datasets import SpecDataset, get_dataloaders, log_scale
+from datasets2 import SpecDataset, get_dataloaders, shift_scale
 import logging
 import time
 from tensorboardX import SummaryWriter
@@ -147,8 +147,8 @@ def train(generator,
         tracker = defaultdict(list)
 
         for i, batch in enumerate(train_dataloader):
-            real = batch["spectrogram_real"].to(device)
-            spec = batch["spectrogram_fake"].to(device)
+            real = batch["mfsc_real"].to(device)
+            spec = batch["mfsc_synth"].to(device)
             f0 = batch["f0"].to(device)
             noise = torch.randn(spec.shape).to(device)
             fake_source = torch.cat((spec,f0), 1)
@@ -206,16 +206,16 @@ def train(generator,
         if (epoch % 10 == 0):
             for i, batch in enumerate(train_dataloader):
                 if i == 1:
-                    real = batch["spectrogram_real"].to(device)
-                    spec = batch["spectrogram_fake"].to(device)
+                    real = batch["mfsc_real"].to(device)
+                    spec = batch["mfsc_synth"].to(device)
                     f0 = batch["f0"].to(device)
                     fake_source = torch.cat((spec,f0), 1)
-                    test_generate(generator, real, fake_source, spec_transform=log_scale(10, 0.01, inverse=True), title=("TRAIN epoch %d" % epoch), writer=writer, device=device)
+                    test_generate(generator, real, fake_source, spec_transform=shift_scale(7, 0.1, inverse=True), title=("TRAIN epoch %d" % epoch), writer=writer, device=device)
             
         if val_dataloader is not None:
             for i, batch in enumerate(val_dataloader):
-                real = batch["spectrogram_real"].to(device)
-                spec = batch["spectrogram_fake"].to(device)
+                real = batch["mfsc_real"].to(device)
+                spec = batch["mfsc_synth"].to(device)
                 f0 = batch["f0"].to(device)
                 fake_source = torch.cat((spec,f0), 1)
                 
@@ -251,11 +251,11 @@ def train(generator,
             if (epoch % 10 == 0):
                 for i, batch in enumerate(val_dataloader):
                     if i == 1:
-                        real = batch["spectrogram_real"].to(device)
-                        spec = batch["spectrogram_fake"].to(device)
+                        real = batch["mfsc_real"].to(device)
+                        spec = batch["mfsc_synth"].to(device)
                         f0 = batch["f0"].to(device)
                         fake_source = torch.cat((spec,f0), 1)
-                        test_generate(generator, real, fake_source, spec_transform=log_scale(10, 0.01, inverse=True), title=("VALID epoch %d" % epoch), writer=writer, device=device)
+                        test_generate(generator, real, fake_source, spec_transform=shift_scale(7, 0.1, inverse=True), title=("VALID epoch %d" % epoch), writer=writer, device=device)
 
         
 
@@ -265,7 +265,7 @@ if __name__ == "__main__":
     generator = UnetGenerator(3, 1, 7)
     discriminator = NLayerDiscriminator(3)
 
-    dataset = SpecDataset(spec_transform=log_scale(10, 0.01), f0_transform=log_scale(-0.5, 0.05))
+    dataset = SpecDataset(spec_transform=shift_scale(7, 0.1), f0_transform=shift_scale(-200, 0.005))
     train_dl, valid_dl = get_dataloaders(dataset, split=0.8)
 
     train(generator, discriminator, train_dl, valid_dl, 41)

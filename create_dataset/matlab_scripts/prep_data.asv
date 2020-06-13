@@ -1,0 +1,216 @@
+clear all;
+close all;
+clc;
+
+%% Parameters 
+
+synthflag = 0; % Set 1 to synthesize and 0 to import pre-synthesized audio
+%% Load f0 contours
+
+f0_chalan = (load("../pitch_contours/initial_aa/chalan_f0.mat").x);
+f0_laykari = (load("../pitch_contours/initial_aa/laykari_f0.mat").x);
+f0_taan = (load("../pitch_contours/initial_aa/taan_f0.mat").x);
+
+%% Load audio files
+
+[chalan, fs] = audioread("../voice_data/initial_aa/all_chalans.wav");
+[laykari, fs] = audioread("../voice_data/initial_aa/all_laykaris.wav");
+[taan, fs] = audioread("../voice_data/initial_aa/all_taans.wav");
+
+%% Getting synthesized audio
+
+if synthflag == 0
+    [synth_chalan, fssynth] = audioread("../voice_data/initial_aa_synth/all_chalans.wav");
+    [synth_laykari, fssynth] = audioread("../voice_data/initial_aa_synth/all_laykaris.wav");
+    [synth_taan, fssynth] = audioread("../voice_data/initial_aa_synth/all_taans.wav");
+else
+    % Generating impulse trains
+    
+    hop_size = 5e-3;
+    hop_len = fs*hop_size;
+    
+    [impulse_train_chalan, f0maps_chalan] = generate_impulse_train(f0_chalan, fs, hop_size);
+    [impulse_train_laykari, f0maps_laykari] = generate_impulse_train(f0_laykari, fs, hop_size);
+    [impulse_train_taan, f0maps_taan] = generate_impulse_train(f0_taan, fs, hop_size);
+    
+    % Generating glottal flows
+    
+    glottal_flow_chalan = generate_glottal_flow(impulse_train_chalan, fs, f0maps_chalan);
+    glottal_flow_laykari = generate_glottal_flow(impulse_train_laykari, fs, f0maps_laykari);
+    glottal_flow_taan = generate_glottal_flow(impulse_train_taan, fs, f0maps_taan);
+    
+    % Synthesize using 2port scattering model
+    
+    load("../tract_shapes/A-bart44100.txt");
+    S = A_bart44100;
+    
+    [synth_chalan, synth_worad_chalan] = synthesize_voice_2portscatter(glottal_flow_chalan, S);
+    [synth_laykari, synth_worad_laykari] = synthesize_voice_2portscatter(glottal_flow_laykari, S);
+    [synth_taan, synth_worad_taan] = synthesize_voice_2portscatter(glottal_flow_taan, S);
+end
+
+%% Normalizing original and synthesized audio
+
+chalan = chalan./max(abs(chalan));
+laykari = laykari./max(abs(laykari));
+taan = taan./max(abs(taan));
+
+synth_chalan = synth_chalan./max(abs(synth_chalan));
+synth_laykari = synth_laykari./max(abs(synth_laykari));
+synth_taan = synth_taan./max(abs(synth_taan));
+
+%% Splitting audio and synth audio into buffers
+
+win_size = 20e-3; % seconds
+win_len = win_size*fs; % samples
+hop_size = 5e-3; % seconds
+hop_len = hop_size*fs; % samples
+
+buffer_chalan = make_buffers(chalan, win_len, hop_len);
+buffer_laykari = make_buffers(laykari, win_len, hop_len);
+buffer_taan = make_buffers(taan, win_len, hop_len);
+
+buffer_synth_chalan = make_buffers(synth_chalan, win_len, hop_len);
+buffer_synth_laykari = make_buffers(synth_laykari, win_len, hop_len);
+buffer_synth_taan = make_buffers(synth_taan, win_len, hop_len);
+
+%% Split buffers into datapoints
+
+split_len = 1024;
+
+nodatapoints_chalan = floor(size(buffer_chalan, 2)/1024);
+nodatapoints_laykari = floor(size(buffer_laykari, 2)/1024);
+nodatapoints_taan = floor(size(buffer_taan, 2)/1024);
+
+for i = 1:nodatapoints_chalan
+    data_chalan{i} = buffer_chalan(:, split_len*(i-1)+1:i*split_len);
+    data_synth_chalan{i} = buffer_synth_chalan(:, split_len*(i-1)+1:i*split_len);
+end
+
+for i = 1:nodatapoints_laykari
+    data_laykari{i} = buffer_laykari(:, split_len*(i-1)+1:i*split_len);
+    data_synth_laykari{i} = buffer_synth_laykari(:, split_len*(i-1)+1:i*split_len);
+end
+
+for i = 1:nodatapoints_taan
+    data_taan{i} = buffer_taan(:, split_len*(i-1)+1:i*split_len);
+    data_synth_taan{i} = buffer_synth_taan(:, split_len*(i-1)+1:i*split_len);
+end
+
+%% Computing log mfsc for every datapoint and saving data to input and output data cells
+
+% Parameters for getpsd
+nfft = 2048;
+window = hann(win_len);
+
+% Parameters for spec2melspec
+fLow = 40;
+fHigh = 18000;
+fRange = [fLow, fHigh];
+noMelChannels = 128;
+
+for i=1:nodatapoints_chalan
+    thisframe_real = data_chalan{i};
+    thisframe_synth = data_synth_chalan{i};
+    thisf0 = f0_chalan(split_len*(i-1)+1:i*split_len);
+    
+    ps_thisframe_real = getpsd(thisframe_real, window, nfft);
+    mfsc_thisframe_real = log10(spec2melspec(ps_thisframe_real, fs, fRange, noMelChannels));
+    mfsc_thisframe_real(find(isinf(mfsc_thisframe_real))) = -15;
+    
+    ps_thisframe_synth = getpsd(thisframe_synth, window, nfft);
+    mfsc_thisframe_synth = log10(spec2melspec(ps_thisframe_synth, fs, fRange, noMelChannels));
+    mfsc_thisframe_synth(find(isinf(mfsc_thisframe_synth))) = -15;
+    
+    real_data_chalan{i, 1} = mfsc_thisframe_real;
+    synth_data_chalan{i, 1} = mfsc_thisframe_synth;
+    f0_data_chalan{i, 1} = thisf0;
+end
+
+for i=1:nodatapoints_laykari
+    thisframe_real = data_laykari{i};
+    thisframe_synth = data_synth_laykari{i};
+    thisf0 = f0_laykari(split_len*(i-1)+1:i*split_len);
+    
+    ps_thisframe_real = getpsd(thisframe_real, window, nfft);
+    mfsc_thisframe_real = log10(spec2melspec(ps_thisframe_real, fs, fRange, noMelChannels));
+    mfsc_thisframe_real(find(isinf(mfsc_thisframe_real))) = -15;
+    
+    ps_thisframe_synth = getpsd(thisframe_synth, window, nfft);
+    mfsc_thisframe_synth = log10(spec2melspec(ps_thisframe_synth, fs, fRange, noMelChannels));
+    mfsc_thisframe_synth(find(isinf(mfsc_thisframe_synth))) = -15;
+    
+    real_data_laykari{i, 1} = mfsc_thisframe_real;
+    synth_data_laykari{i, 1} = mfsc_thisframe_synth;
+    f0_data_laykari{i, 1} = thisf0;
+end
+
+for i=1:nodatapoints_taan
+    thisframe_real = data_taan{i};
+    thisframe_synth = data_synth_taan{i};
+    thisf0 = f0_taan(split_len*(i-1)+1:i*split_len);
+    
+    ps_thisframe_real = getpsd(thisframe_real, window, nfft);
+    mfsc_thisframe_real = log10(spec2melspec(ps_thisframe_real, fs, fRange, noMelChannels));
+    mfsc_thisframe_real(find(isinf(mfsc_thisframe_real))) = -15;
+    
+    ps_thisframe_synth = getpsd(thisframe_synth, window, nfft);
+    mfsc_thisframe_synth = log10(spec2melspec(ps_thisframe_synth, fs, fRange, noMelChannels));
+    mfsc_thisframe_synth(find(isinf(mfsc_thisframe_synth))) = -15;
+    
+    real_data_taan{i, 1} = mfsc_thisframe_real;
+    
+    synth_data_taan{i, 1} = thisf0;
+    f0_data_taan{i, 1} = 
+end
+
+%% Write data to hdf5 files
+
+filepath = "../../data/initial_aa_dataset.hdf5";
+
+for i = 1:nodatapoints_chalan
+    thisf0 = f0_data_chalan{i};
+    thismfsc_synth = synth_data_chalan{i};
+    thismfsc_real = real_data_chalan{i};
+    
+    numstr = num2str(i, '%02d');
+    
+    h5create(filepath, ["/chalan/data_"+numstr+"/f0"], size(thisf0));
+    h5create(filepath, ["/chalan/data_"+numstr+"/log_mfsc_synth"], size(thismfsc_synth));
+    h5create(filepath, ["/chalan/data_"+numstr+"/log_mfsc_real"], size(thismfsc_real));
+    
+    h5write(filepath, ["/chalan/data_"+numstr+"/f0"], thisf0);
+    h5write(filepath, ["/chalan/data_"+numstr+"/log_mfsc_synth"], thismfsc_synth);
+    h5write(filepath, ["/chalan/data_"+numstr+"/log_mfsc_real"], thismfsc_real);
+end
+
+for i = 1:nodatapoints_laykari
+    thisf0 = f0_data_laykari{i};
+    thismfsc_synth = synth_data_laykari{i};
+    thismfsc_real = real_data_laykari{i};
+    
+    numstr = num2str(i, '%02d');
+    h5create(filepath, ["/laykari/data_"+numstr+"/f0"], size(thisf0));
+    h5create(filepath, ["/laykari/data_"+numstr+"/log_mfsc_synth"], size(thismfsc_synth));
+    h5create(filepath, ["/laykari/data_"+numstr+"/log_mfsc_real"], size(thismfsc_real));
+    
+    h5write(filepath, ["/laykari/data_"+numstr+"/f0"], thisf0);
+    h5write(filepath, ["/laykari/data_"+numstr+"/log_mfsc_synth"], thismfsc_synth);
+    h5write(filepath, ["/laykari/data_"+numstr+"/log_mfsc_real"], thismfsc_real);
+end
+
+for i = 1:nodatapoints_taan
+    thisf0 = f0_data_taan{i};
+    thismfsc_synth = synth_data_taan{i};
+    thismfsc_real = real_data_taan{i};
+    
+    numstr = num2str(i, '%02d');
+    h5create(filepath, ["/taan/data_"+numstr+"/f0"], size(thisf0));
+    h5create(filepath, ["/taan/data_"+numstr+"/log_mfsc_synth"], size(thismfsc_synth));
+    h5create(filepath, ["/taan/data_"+numstr+"/log_mfsc_real"], size(thismfsc_real));
+    
+    h5write(filepath, ["/taan/data_"+numstr+"/f0"], thisf0);
+    h5write(filepath, ["/taan/data_"+numstr+"/log_mfsc_synth"], thismfsc_synth);    
+    h5write(filepath, ["/taan/data_"+numstr+"/log_mfsc_real"], thismfsc_real);
+end
+
