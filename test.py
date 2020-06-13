@@ -1,9 +1,12 @@
 import torch
 import numpy as np
 
-def test_generate(generator, real, source, spec_transform=None, title="", writer=None, device="cpu"):
-    noise = torch.randn(real.shape).to(device)
-    fake = generator(torch.cat((source,noise), 1))
+def test_generate(generator, real, source, spec_transform=None, title="", writer=None, device="cpu", useNoise=True):
+    if useNoise:
+        noise = torch.randn(real.shape).to(device)
+        fake = generator(torch.cat((source,noise), 1))
+    else:
+        fake = generator(source)
         
     real = torch.squeeze(real[0,:,:,:])
     fake = torch.squeeze(fake[0,:,:,:])
